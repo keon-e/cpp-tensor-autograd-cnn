@@ -1,4 +1,4 @@
-#include "Value.hpp"
+#include <Value.hpp>
 
 class Neuron {
     public:
