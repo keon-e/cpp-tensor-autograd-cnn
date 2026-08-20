@@ -301,7 +301,6 @@ public:
                 out_offset += idx[k] * out->strides[k];
             }
 
-
             for(size_t i = 0; i < A_y; i++) {
                 for(size_t j = 0; j < B_x; j++) {
                     for(size_t p = 0; p < A_x; p++) {
@@ -309,7 +308,6 @@ public:
                     }
                 }
             }
-        
 
             for(int k = (int)out_rank - 3; k >= 0; k--) {
                 idx[k]++;

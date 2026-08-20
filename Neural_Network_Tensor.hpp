@@ -27,6 +27,11 @@ class Layer {
         return out_biased->relu();
     }
 
+    Tensor* forward_no_relu(Tensor* input) {
+        Tensor* out = input->matmul(*weights);
+        return out->add(*bias);
+    }
+
     void zero_grad_layer() {
         weights->zero_grad();
         bias->zero_grad();
@@ -47,10 +52,11 @@ public:
     Tensor* forward(Tensor* input) {
         Tensor* current = input;
 
-        for(size_t i = 0; i < layers.size(); i++) {
+        for(size_t i = 0; i < layers.size() - 1; i++) {
             current = layers[i].forward(current);
         }
-
+        
+        current = layers[layers.size() - 1].forward_no_relu(current);
         return current;
     }
 

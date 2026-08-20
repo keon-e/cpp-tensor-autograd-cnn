@@ -11,15 +11,14 @@ Tensor* mse_loss(Tensor* predictions, Tensor& targets) {
         negative_data[i] = -targets.data[i];
     }
 
-    Tensor negative_targets = Tensor(negative_data, targets.shape);
-    Tensor* diff = predictions->add(negative_targets);
+    Tensor* negative_targets = new Tensor(negative_data, targets.shape);
+    Tensor* diff = predictions->add(*negative_targets);
     Tensor* diff_squared = diff->mul(*diff);
 
     return diff_squared->sum();
 }
 
 int main() {
-    // --- Tiny synthetic problem: learn to map a 4-dim input to a 2-dim target ---
     MLP mlp(std::vector<size_t>{4, 5, 2});
 
     Tensor input(std::vector<double>{1.0, 0.5, -1.0, 2.0}, std::vector<size_t>{1, 4});
@@ -29,19 +28,14 @@ int main() {
     int num_steps = 200;
 
     for (int step = 0; step < num_steps; step++) {
-        // 1. zero gradients from the previous step
         mlp.zero_grad_mlp();
 
-        // 2. forward pass
         Tensor* predictions = mlp.forward(&input);
 
-        // 3. compute loss
         Tensor* loss = mse_loss(predictions, target);
 
-        // 4. backward pass
         loss->backward();
 
-        // 5. update weights (plain gradient descent, outside the graph)
         for (auto& layer : mlp.layers) {
             for (size_t i = 0; i < layer.weights->data.size(); i++)
                 layer.weights->data[i] -= learning_rate * layer.weights->grad[i];
@@ -54,7 +48,6 @@ int main() {
         }
     }
 
-    // final predictions, should be closer to target = [1.0, 0.0] than at the start
     Tensor* final_pred = mlp.forward(&input);
     std::cout << "final predictions: ";
     for (double v : final_pred->data) std::cout << v << " ";
