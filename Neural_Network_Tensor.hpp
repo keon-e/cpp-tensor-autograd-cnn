@@ -8,7 +8,8 @@ class Layer {
     Layer(int nin, int nout) {
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_real_distribution<double> dist(-1.0, 1.0);
+        double bound = 1.0 / std::sqrt((double)nin);
+        std::uniform_real_distribution<double> dist(-bound, bound);
         std::vector<double> w_data((size_t)nin * (size_t)nout);
 
         for (auto& w : w_data) {
@@ -41,6 +42,8 @@ class Layer {
 class MLP {
 public:
     std::vector<Layer> layers;
+
+    MLP();
 
     MLP(std::vector<size_t> nouts) {
 
