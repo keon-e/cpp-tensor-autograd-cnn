@@ -71,7 +71,7 @@ public:
             size_t dim_b = (i >= rank - b.size()) ? b[i - (rank - b.size())] : 1;
 
             if(dim_a != dim_b && dim_a != 1 && dim_b != 1) {
-                throw std::runtime_error("dimensions incompatible");
+                throw std::runtime_error("dimensions incompatible: broadcast_shape");
             }
 
             out_shape[i] = std::max(dim_a, dim_b);
@@ -269,7 +269,7 @@ public:
         size_t B_x = other.shape[other.shape.size() - 1];
 
         if(A_x != B_y) {
-            throw std::runtime_error("dimensions incompatible");
+            throw std::runtime_error("dimensions incompatible: matmul");
         }
         
         batch_dimensions.push_back(A_y);
@@ -420,52 +420,64 @@ public:
 
     Tensor* conv2d(Tensor& filter) {
         size_t batch_size = this->shape[0];
-        size_t in_h = this->shape[1];
-        size_t in_w = this->shape[2];
+        size_t in_channels = this->shape[1];
+        size_t in_h = this->shape[2];
+        size_t in_w = this->shape[3];
 
-        size_t filter_h = filter.shape[0];
-        size_t filter_w = filter.shape[1];
+        size_t filter_num = filter.shape[0];
+        size_t filter_h = filter.shape[2];
+        size_t filter_w = filter.shape[3];
 
         size_t out_h = in_h - filter_h + 1;
         size_t out_w = in_w - filter_w + 1;
 
-        Tensor* out = new Tensor(std::vector<size_t>{batch_size, out_h, out_w}, std::vector<Tensor*>{this, &filter});
+        Tensor* out = new Tensor(std::vector<size_t>{batch_size, filter_num, out_h, out_w}, std::vector<Tensor*>{this, &filter});
 
-        for(size_t i = 0; i < batch_size; i++) {
-            for(size_t j = 0; j < out_h; j++) {
-                for(size_t p = 0; p < out_w; p++) {
-                    
-                    size_t out_offset = (i * out->strides[0]) + (j * out->strides[1]) + (p * out->strides[2]);
-                    double accumulate = 0;
+        for (size_t i = 0; i < batch_size; i++) {
+            for (size_t f = 0; f < filter_num; f++) {
+                for (size_t j = 0; j < out_h; j++) {
+                    for (size_t p = 0; p < out_w; p++) {
 
-                    for(size_t fr = 0; fr < filter_h; fr++) {
-                        for(size_t fc = 0; fc < filter_w; fc++) {
-                            size_t this_offset = (i * this->strides[0]) + ((j + fr) * this->strides[1]) + ((p + fc) * this->strides[2]);
-                            size_t filter_offset = (fr * filter.strides[0]) + (fc * filter.strides[1]);
+                        size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
+                        double accumulate = 0;
 
-                            accumulate += this->data[this_offset] * filter.data[filter_offset];
+                        for (size_t c = 0; c < in_channels; c++) {
+                            for (size_t fr = 0; fr < filter_h; fr++) {
+                                for (size_t fc = 0; fc < filter_w; fc++) {
+
+                                    size_t this_offset = (i * this->strides[0]) + (c * this->strides[1]) + ((j + fr) * this->strides[2]) + ((p + fc) * this->strides[3]);
+                                    size_t filter_offset = (f * filter.strides[0]) + (c * filter.strides[1]) + (fr * filter.strides[2]) + (fc * filter.strides[3]);
+
+                                    accumulate += this->data[this_offset] * filter.data[filter_offset];
+                                }
+                            }
                         }
-                    }
 
-                    out->data[out_offset] = accumulate;
+                        out->data[out_offset] = accumulate;
+                    }
                 }
             }
         }
 
-        out->backward_fn = [this, out, &filter, batch_size, in_h, in_w, filter_h, filter_w, out_h, out_w]() {
-            for(size_t i = 0; i < batch_size; i++) {
-                for(size_t j = 0; j < out_h; j++) {
-                    for(size_t p = 0; p < out_w; p++) {
-                    
-                        size_t out_offset = (i * out->strides[0]) + (j * out->strides[1]) + (p * out->strides[2]);
+        out->backward_fn = [this, out, &filter, batch_size, in_channels, in_h, in_w, filter_num, filter_h, filter_w, out_h, out_w]() {
+            for (size_t i = 0; i < batch_size; i++) {
+                for (size_t f = 0; f < filter_num; f++) {
+                    for (size_t j = 0; j < out_h; j++) {
+                        for (size_t p = 0; p < out_w; p++) {
 
-                        for(size_t fr = 0; fr < filter_h; fr++) {
-                            for(size_t fc = 0; fc < filter_w; fc++) {
-                                size_t this_offset = (i * this->strides[0]) + ((j + fr) * this->strides[1]) + ((p + fc) * this->strides[2]);
-                                size_t filter_offset = (fr * filter.strides[0]) + (fc * filter.strides[1]);
+                            size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
 
-                                this->grad[this_offset] += filter.data[filter_offset] * out->grad[out_offset];
-                                filter.grad[filter_offset] += this->data[this_offset] * out->grad[out_offset];
+                            for (size_t c = 0; c < in_channels; c++) {
+                                for (size_t fr = 0; fr < filter_h; fr++) {
+                                    for (size_t fc = 0; fc < filter_w; fc++) {
+
+                                        size_t this_offset = (i * this->strides[0]) + (c * this->strides[1]) + ((j + fr) * this->strides[2]) + ((p + fc) * this->strides[3]);
+                                        size_t filter_offset = (f * filter.strides[0]) + (c * filter.strides[1]) + (fr * filter.strides[2]) + (fc * filter.strides[3]);
+
+                                        this->grad[this_offset] += filter.data[filter_offset] * out->grad[out_offset];
+                                        filter.grad[filter_offset] += this->data[this_offset] * out->grad[out_offset];
+                                    }
+                                }
                             }
                         }
                     }
@@ -478,47 +490,54 @@ public:
 
     Tensor *maxpool2d(size_t pool_size) {
         size_t batches = this->shape[0];
-        size_t out_h = this->shape[1] / pool_size;
-        size_t out_w = this->shape[2] / pool_size;
+        size_t filter_num = this->shape[1];
+        size_t out_h = this->shape[2] / pool_size;
+        size_t out_w = this->shape[3] / pool_size;
 
-        Tensor* out = new Tensor({batches, out_h, out_w}, {this});
+        Tensor* out = new Tensor({batches, filter_num, out_h, out_w}, {this});
 
         for(size_t i = 0; i < batches; i++) {
-            for(size_t j = 0; j < out_h; j++) {
-                for(size_t p = 0; p < out_w; p++) {
-
-                    size_t out_offset = (i * out->strides[0]) + (j * out->strides[1]) + (p * out->strides[2]);
-                    double max_val = 0;
-
-                    for(size_t pr = 0; pr < pool_size; pr++) {
-                        for(size_t pc = 0; pc < pool_size; pc++) {
-                            
-                            size_t this_offset = (i * this->strides[0]) + ((j * pool_size + pr) * this->strides[1]) + ((p * pool_size + pc) * this->strides[2]);
-                            if(this->data[this_offset] > max_val) {
-                                max_val = this->data[this_offset];
-                            }
-                        }
-                    }
-                    out->data[out_offset] = max_val;
-                }
-            }
-        }
-
-        out->backward_fn = [this, out, pool_size, batches, out_h, out_w]() {
-            for(size_t i = 0; i < batches; i++) {
+            for(size_t f = 0; f < filter_num; f++) {
                 for(size_t j = 0; j < out_h; j++) {
                     for(size_t p = 0; p < out_w; p++) {
-                        size_t out_offset = (i * out->strides[0]) + (j * out->strides[1]) + (p * out->strides[2]);
+
+                        size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
+                        double max_val = 0;
 
                         for(size_t pr = 0; pr < pool_size; pr++) {
                             for(size_t pc = 0; pc < pool_size; pc++) {
                                 
-                                size_t this_offset = (i * this->strides[0]) + ((j * pool_size + pr) * this->strides[1]) + ((p * pool_size + pc) * this->strides[2]);
-                                if(this->data[this_offset] < out->data[out_offset]) {
-                                    this->grad[this_offset] = 0;
+                                size_t this_offset = (i * this->strides[0]) + (f * this->strides[1]) + ((j * pool_size + pr) * this->strides[2]) + ((p * pool_size + pc) * this->strides[3]);
+                                if(this->data[this_offset] > max_val) {
+                                    max_val = this->data[this_offset];
                                 }
-                                else {
-                                    this->grad[this_offset] += out->grad[out_offset];
+                            }
+                        }
+                        out->data[out_offset] = max_val;
+                    }
+                }
+            }
+        }
+
+        out->backward_fn = [this, out, pool_size, batches, filter_num, out_h, out_w]() {
+            for(size_t i = 0; i < batches; i++) {
+                for(size_t f = 0; f < filter_num; f++) {
+                    for(size_t j = 0; j < out_h; j++) {
+                        for(size_t p = 0; p < out_w; p++) {
+
+                            size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
+
+                            for(size_t pr = 0; pr < pool_size; pr++) {
+                                for(size_t pc = 0; pc < pool_size; pc++) {
+                                    
+                                    size_t this_offset = (i * this->strides[0]) + (f * this->strides[1]) + ((j * pool_size + pr) * this->strides[2]) + ((p * pool_size + pc) * this->strides[3]);
+                                    
+                                    if(this->data[this_offset] < out->data[out_offset]) {
+                                        this->grad[this_offset] = 0;
+                                    }
+                                    else {
+                                        this->grad[this_offset] += out->grad[out_offset];
+                                    }
                                 }
                             }
                         }

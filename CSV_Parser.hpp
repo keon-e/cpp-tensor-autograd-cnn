@@ -1,3 +1,5 @@
+#pragma once
+
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -51,6 +53,7 @@ public:
 
         return new Tensor(flat_data, std::vector<size_t>{batch_size, 784});
     }
+
     Tensor* batch_image_2d(size_t start, size_t batch_size) {
         std::vector<double> flat_data;
         flat_data.reserve(batch_size * 784);
@@ -59,7 +62,7 @@ public:
             for(auto k : images[i]) 
                 flat_data.push_back(k);
                 
-        return new Tensor(flat_data, std::vector<size_t>{batch_size, 28, 28});
+        return new Tensor(flat_data, std::vector<size_t>{batch_size, 1, 28, 28});
     }
 
     Tensor* batch_target(size_t start, size_t batch_size) {

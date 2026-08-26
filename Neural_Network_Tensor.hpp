@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Tensor.hpp"
 
 class Layer {
@@ -42,8 +44,6 @@ class Layer {
 class MLP {
 public:
     std::vector<Layer> layers;
-
-    MLP();
 
     MLP(std::vector<size_t> nouts) {
 

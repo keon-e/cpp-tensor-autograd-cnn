@@ -1,32 +1,54 @@
 #include <iostream>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <vector>
 #include "Tensor.hpp"
 #include "Neural_Network_Tensor.hpp"
+#include "Conv_Layer.hpp"
 #include "CSV_Parser.hpp"
 
 Tensor* mse_loss(Tensor* predictions, Tensor& targets) {
     std::vector<double> negative_data(targets.data.size());
-
     for (size_t i = 0; i < targets.data.size(); i++) {
         negative_data[i] = -targets.data[i];
     }
-
     Tensor* negative_targets = new Tensor(negative_data, targets.shape);
     Tensor* diff = predictions->add(*negative_targets);
     Tensor* diff_squared = diff->mul(*diff);
-
     return diff_squared->sum();
+}
+
+double check_accuracy(CNN& cnn, MNIST_Data& val_data, size_t batch_size) {
+    size_t num_batches = val_data.images.size() / batch_size;
+    size_t correct = 0;
+    size_t total = 0;
+
+    for (size_t batch = 0; batch < num_batches; batch++) {
+        size_t start = batch * batch_size;
+        Tensor* input = val_data.batch_image_2d(start, batch_size);
+        Tensor* predictions = cnn.forward(input);
+
+        for (size_t i = 0; i < batch_size; i++) {
+            size_t best_idx = 0;
+            double best_val = predictions->data[i * 10];
+            for (size_t c = 1; c < 10; c++) {
+                if (predictions->data[i * 10 + c] > best_val) {
+                    best_val = predictions->data[i * 10 + c];
+                    best_idx = c;
+                }
+            }
+            if ((int)best_idx == val_data.numbers[start + i]) correct++;
+            total++;
+        }
+    }
+
+    return (double)correct / total;
 }
 
 int main() {
     std::cout << "loading data..." << std::endl;
     MNIST_Data train_data("mnist_train.csv");
+    MNIST_Data val_data("mnist_val.csv");
     std::cout << "loaded " << train_data.images.size() << " training images" << std::endl;
 
-    MLP mlp(std::vector<size_t>{784, 128, 64, 10});
+    CNN cnn(3, 3, std::vector<size_t>{4, 8}, std::vector<size_t>{25*8, 32, 10});
 
     double learning_rate = 0.01;
     size_t batch_size = 32;
@@ -38,16 +60,23 @@ int main() {
         for (size_t batch = 0; batch < num_batches; batch++) {
             size_t start = batch * batch_size;
 
-            Tensor* input = train_data.batch_image(start, batch_size);
+            Tensor* input = train_data.batch_image_2d(start, batch_size);
             Tensor* target = train_data.batch_target(start, batch_size);
 
-            mlp.zero_grad_mlp();
+            cnn.zero_grad_cnn();
 
-            Tensor* predictions = mlp.forward(input);
+            Tensor* predictions = cnn.forward(input);
             Tensor* loss = mse_loss(predictions, *target);
             loss->backward();
 
-            for (auto& layer : mlp.layers) {
+            for (auto* layer_conv : std::vector<ConvLayer*>{&cnn.conv1, &cnn.conv2}) {
+                for (size_t i = 0; i < layer_conv->filter->data.size(); i++)
+                    layer_conv->filter->data[i] -= learning_rate * layer_conv->filter->grad[i];
+                for (size_t i = 0; i < layer_conv->bias->data.size(); i++)
+                    layer_conv->bias->data[i] -= learning_rate * layer_conv->bias->grad[i];
+            }
+
+            for (auto& layer : cnn.mlp.layers) {
                 for (size_t i = 0; i < layer.weights->data.size(); i++)
                     layer.weights->data[i] -= learning_rate * layer.weights->grad[i];
                 for (size_t i = 0; i < layer.bias->data.size(); i++)
@@ -61,6 +90,9 @@ int main() {
     }
 
     std::cout << "training done" << std::endl;
+
+    double acc = check_accuracy(cnn, val_data, batch_size);
+    std::cout << "validation accuracy: " << (acc * 100.0) << "%" << std::endl;
 
     return 0;
 }
