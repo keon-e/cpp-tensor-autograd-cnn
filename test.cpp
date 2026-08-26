@@ -4,14 +4,14 @@
 #include "Conv_Layer.hpp"
 #include "CSV_Parser.hpp"
 
-Tensor* mse_loss(Tensor* predictions, Tensor& targets) {
-    std::vector<double> negative_data(targets.data.size());
-    for (size_t i = 0; i < targets.data.size(); i++) {
-        negative_data[i] = -targets.data[i];
+std::shared_ptr<Tensor> mse_loss(std::shared_ptr<Tensor> predictions, std::shared_ptr<Tensor> targets) {
+    std::vector<double> negative_data(targets->data.size());
+    for (size_t i = 0; i < targets->data.size(); i++) {
+        negative_data[i] = -targets->data[i];
     }
-    Tensor* negative_targets = new Tensor(negative_data, targets.shape);
-    Tensor* diff = predictions->add(*negative_targets);
-    Tensor* diff_squared = diff->mul(*diff);
+    std::shared_ptr<Tensor> negative_targets = std::make_shared<Tensor>(negative_data, targets->shape);
+    std::shared_ptr<Tensor> diff = predictions->add(negative_targets);
+    std::shared_ptr<Tensor> diff_squared = diff->mul(diff);
     return diff_squared->sum();
 }
 
@@ -22,8 +22,8 @@ double check_accuracy(CNN& cnn, MNIST_Data& val_data, size_t batch_size) {
 
     for (size_t batch = 0; batch < num_batches; batch++) {
         size_t start = batch * batch_size;
-        Tensor* input = val_data.batch_image_2d(start, batch_size);
-        Tensor* predictions = cnn.forward(input);
+        std::shared_ptr<Tensor> input = val_data.batch_image_2d(start, batch_size);
+        std::shared_ptr<Tensor> predictions = cnn.forward(input);
 
         for (size_t i = 0; i < batch_size; i++) {
             size_t best_idx = 0;
@@ -60,13 +60,13 @@ int main() {
         for (size_t batch = 0; batch < num_batches; batch++) {
             size_t start = batch * batch_size;
 
-            Tensor* input = train_data.batch_image_2d(start, batch_size);
-            Tensor* target = train_data.batch_target(start, batch_size);
+            std::shared_ptr<Tensor> input = train_data.batch_image_2d(start, batch_size);
+            std::shared_ptr<Tensor> target = train_data.batch_target(start, batch_size);
 
             cnn.zero_grad_cnn();
 
-            Tensor* predictions = cnn.forward(input);
-            Tensor* loss = mse_loss(predictions, *target);
+            std::shared_ptr<Tensor> predictions = cnn.forward(input);
+            std::shared_ptr<Tensor> loss = mse_loss(predictions, target);
             loss->backward();
 
             for (auto* layer_conv : std::vector<ConvLayer*>{&cnn.conv1, &cnn.conv2}) {

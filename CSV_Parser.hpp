@@ -41,7 +41,7 @@ public:
         }
     }
 
-    Tensor* batch_image(size_t start, size_t batch_size) {
+    std::shared_ptr<Tensor> batch_image(size_t start, size_t batch_size) {
         std::vector<double> flat_data;
         flat_data.reserve(batch_size * 784);
 
@@ -51,10 +51,10 @@ public:
             }
         }
 
-        return new Tensor(flat_data, std::vector<size_t>{batch_size, 784});
+        return std::make_shared<Tensor>(flat_data, std::vector<size_t>{batch_size, 784});
     }
 
-    Tensor* batch_image_2d(size_t start, size_t batch_size) {
+    std::shared_ptr<Tensor> batch_image_2d(size_t start, size_t batch_size) {
         std::vector<double> flat_data;
         flat_data.reserve(batch_size * 784);
 
@@ -62,10 +62,10 @@ public:
             for(auto k : images[i]) 
                 flat_data.push_back(k);
                 
-        return new Tensor(flat_data, std::vector<size_t>{batch_size, 1, 28, 28});
+        return std::make_shared<Tensor>(flat_data, std::vector<size_t>{batch_size, 1, 28, 28});
     }
 
-    Tensor* batch_target(size_t start, size_t batch_size) {
+    std::shared_ptr<Tensor> batch_target(size_t start, size_t batch_size) {
         std::vector<double> one_hot(batch_size * 10, 0.0);
 
         for(size_t i = start; i < batch_size + start; i++) {
@@ -73,10 +73,7 @@ public:
             one_hot[(i - start) * 10 + value] = 1.0;
         }
 
-        return new Tensor(one_hot, std::vector<size_t>{batch_size, 10});
+        return std::make_shared<Tensor>(one_hot, std::vector<size_t>{batch_size, 10});
     }
 
 };
-
- 
-

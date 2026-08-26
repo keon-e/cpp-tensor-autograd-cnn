@@ -4,8 +4,8 @@
 
 class Layer {
     public:
-        Tensor* weights;
-        Tensor* bias;
+        std::shared_ptr<Tensor> weights;
+        std::shared_ptr<Tensor> bias;
 
     Layer(int nin, int nout) {
         std::random_device rd;
@@ -18,21 +18,21 @@ class Layer {
             w = dist(gen);
         }
         
-        weights = new Tensor(w_data, std::vector<size_t>{(size_t)nin, (size_t)nout});
+        weights = std::make_shared<Tensor>(w_data, std::vector<size_t>{(size_t)nin, (size_t)nout});
 
         std::vector<double> b_data((size_t)nout, 0.0);
-        bias = new Tensor(b_data, std::vector<size_t>{(size_t)nout});
+        bias = std::make_shared<Tensor>(b_data, std::vector<size_t>{(size_t)nout});
     }
 
-    Tensor* forward(Tensor* input) {
-        Tensor* out = input->matmul(*weights);
-        Tensor* out_biased = out->add(*bias);
+    std::shared_ptr<Tensor> forward(std::shared_ptr<Tensor> input) {
+        std::shared_ptr<Tensor> out = input->matmul(weights);
+        std::shared_ptr<Tensor> out_biased = out->add(bias);
         return out_biased->relu();
     }
 
-    Tensor* forward_no_relu(Tensor* input) {
-        Tensor* out = input->matmul(*weights);
-        return out->add(*bias);
+    std::shared_ptr<Tensor> forward_no_relu(std::shared_ptr<Tensor> input) {
+        std::shared_ptr<Tensor> out = input->matmul(weights);
+        return out->add(bias);
     }
 
     void zero_grad_layer() {
@@ -52,8 +52,8 @@ public:
         }
     }
 
-    Tensor* forward(Tensor* input) {
-        Tensor* current = input;
+    std::shared_ptr<Tensor> forward(std::shared_ptr<Tensor> input) {
+        std::shared_ptr<Tensor> current = input;
 
         for(size_t i = 0; i < layers.size() - 1; i++) {
             current = layers[i].forward(current);

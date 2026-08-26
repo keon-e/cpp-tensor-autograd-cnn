@@ -9,14 +9,14 @@
 #include <memory>
 #include <random>
 
-class Tensor {
+class Tensor : public std::enable_shared_from_this<Tensor> {
 public:
     std::vector<double> data;
     std::vector<double> grad;
     std::vector<size_t> shape;
     std::vector<size_t> strides;
 
-    std::vector<Tensor*> parents;
+    std::vector<std::shared_ptr<Tensor>> parents;
     std::function<void()> backward_fn = [](){};
 
     Tensor(std::vector<double> val, std::vector<size_t> dimensions) {
@@ -36,7 +36,7 @@ public:
         grad = std::vector<double>(data.size(), 0.0); 
     }
 
-    Tensor(std::vector<size_t> dimensions, std::vector<Tensor*> p = {}) {
+    Tensor(std::vector<size_t> dimensions, std::vector<std::shared_ptr<Tensor>> p = {}) {
         shape = dimensions;
         strides = compute_strides(shape);
         size_t total = 1;
@@ -104,11 +104,11 @@ public:
         return result;
     }
 
-    Tensor* add(Tensor &other) {
-        std::vector<size_t> dimensions = broadcast_shape(this->shape, other.shape);
-        Tensor* out = new Tensor(dimensions, {this, &other});
+    std::shared_ptr<Tensor> add(std::shared_ptr<Tensor> other) {
+        std::vector<size_t> dimensions = broadcast_shape(this->shape, other->shape);
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(dimensions, std::vector<std::shared_ptr<Tensor>>{shared_from_this(), other});
         std::vector<size_t> this_ostrides = broadcast_strides(this->shape, this->strides, out->shape);
-        std::vector<size_t> other_ostrides = broadcast_strides(other.shape, other.strides, out->shape);
+        std::vector<size_t> other_ostrides = broadcast_strides(other->shape, other->strides, out->shape);
         
         size_t rank = out->shape.size();
         size_t total = out->data.size();
@@ -125,7 +125,7 @@ public:
                 out_offset += idx[k] * out->strides[k];
             }
 
-            out->data[out_offset] = this->data[this_offset] + other.data[other_offset];
+            out->data[out_offset] = this->data[this_offset] + other->data[other_offset];
 
             for(int k = (int)rank - 1; k >= 0; k--) {
                 idx[k]++;
@@ -138,27 +138,27 @@ public:
             }
         }
 
-        out->backward_fn = [this, &other, out, this_ostrides, other_ostrides, rank]() {
-            size_t total = out->grad.size();
+        out->backward_fn = [self = shared_from_this(), other, out_ptr = out.get(), this_ostrides, other_ostrides, rank]() {
+            size_t total = out_ptr->grad.size();
             std::vector<size_t> idx(rank, 0);
 
             for(size_t i = 0; i < total; i++) {
                 size_t this_offset = 0;
                 size_t other_offset = 0;
                 size_t out_offset = 0;
-                
+
                 for(size_t k = 0; k < rank; k++) {
                     this_offset += idx[k] * this_ostrides[k];
                     other_offset += idx[k] * other_ostrides[k];
-                    out_offset += idx[k] * out->strides[k];
+                    out_offset += idx[k] * out_ptr->strides[k];
                 }
 
-                this->grad[this_offset] += out->grad[out_offset];
-                other.grad[other_offset] += out->grad[out_offset];
+                self->grad[this_offset] += out_ptr->grad[out_offset];
+                other->grad[other_offset] += out_ptr->grad[out_offset];
 
                 for(int k = int(rank) - 1; k >= 0; k--) {
                     idx[k]++;
-                    if(idx[k] >= out->shape[k]) {
+                    if(idx[k] >= out_ptr->shape[k]) {
                         idx[k] = 0;
                     }
                     else {
@@ -171,11 +171,11 @@ public:
         return out;
     }
     
-    Tensor* mul(Tensor &other) {
-        std::vector<size_t> dimensions = broadcast_shape(this->shape, other.shape);
-        Tensor* out = new Tensor(dimensions, {this, &other});
+    std::shared_ptr<Tensor> mul(std::shared_ptr<Tensor> other) {
+        std::vector<size_t> dimensions = broadcast_shape(this->shape, other->shape);
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(dimensions, std::vector<std::shared_ptr<Tensor>>{shared_from_this(), other});
         std::vector<size_t> this_ostrides = broadcast_strides(this->shape, this->strides, out->shape);
-        std::vector<size_t> other_ostrides = broadcast_strides(other.shape, other.strides, out->shape);
+        std::vector<size_t> other_ostrides = broadcast_strides(other->shape, other->strides, out->shape);
         
         size_t rank = out->shape.size();
         size_t total = out->data.size();
@@ -192,7 +192,7 @@ public:
                 out_offset += idx[k] * out->strides[k];
             }
 
-            out->data[out_offset] = this->data[this_offset] * other.data[other_offset];
+            out->data[out_offset] = this->data[this_offset] * other->data[other_offset];
 
             for(int k = (int)rank - 1; k >= 0; k--) {
                 idx[k]++;
@@ -205,27 +205,27 @@ public:
             }
         }
 
-        out->backward_fn = [this, &other, out, this_ostrides, other_ostrides, rank]() {
-            size_t total = out->grad.size();
+        out->backward_fn = [self = shared_from_this(), other, out_ptr = out.get(), this_ostrides, other_ostrides, rank]() {
+            size_t total = out_ptr->grad.size();
             std::vector<size_t> idx(rank, 0);
 
             for(size_t i = 0; i < total; i++) {
                 size_t this_offset = 0;
                 size_t other_offset = 0;
                 size_t out_offset = 0;
-                
+
                 for(size_t k = 0; k < rank; k++) {
                     this_offset += idx[k] * this_ostrides[k];
                     other_offset += idx[k] * other_ostrides[k];
-                    out_offset += idx[k] * out->strides[k];
+                    out_offset += idx[k] * out_ptr->strides[k];
                 }
 
-                this->grad[this_offset] += other.data[other_offset] * out->grad[out_offset];
-                other.grad[other_offset] += this->data[this_offset] * out->grad[out_offset];
+                self->grad[this_offset] += other->data[other_offset] * out_ptr->grad[out_offset];
+                other->grad[other_offset] += self->data[this_offset] * out_ptr->grad[out_offset];
 
                 for(int k = int(rank) - 1; k >= 0; k--) {
                     idx[k]++;
-                    if(idx[k] >= out->shape[k]) {
+                    if(idx[k] >= out_ptr->shape[k]) {
                         idx[k] = 0;
                     }
                     else {
@@ -235,38 +235,39 @@ public:
             }
         };
 
+
         return out;
     }
 
-    Tensor* relu() {
-        Tensor* out = new Tensor(this->shape, {this});
+    std::shared_ptr<Tensor> relu() {
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(this->shape, std::vector<std::shared_ptr<Tensor>>{shared_from_this()});
         size_t total = this->data.size();
         
         for(size_t i = 0; i < total; i++) {
             out->data[i] = (this->data[i] > 0) ? this->data[i] : 0;
         }
 
-        out->backward_fn = [this, out, total]() {
+        out->backward_fn = [self = shared_from_this(), out_ptr = out.get(), total]() {
             for(size_t i = 0; i < total; i++) {
-                this->grad[i] += (this->data[i] > 0) ? out->grad[i] : 0;
+                self->grad[i] += (self->data[i] > 0) ? out_ptr->grad[i] : 0;
             }
         };
 
         return out;
     }
 
-    Tensor* matmul(Tensor &other) {
+    std::shared_ptr<Tensor> matmul(std::shared_ptr<Tensor> other) {
         std::vector<size_t> mat_dimensions(2);
         std::vector<size_t> this_batch = this->shape;
-        std::vector<size_t> other_batch = other.shape;
+        std::vector<size_t> other_batch = other->shape;
         this_batch.resize(this->shape.size() - 2);
-        other_batch.resize(other.shape.size() - 2);
+        other_batch.resize(other->shape.size() - 2);
         std::vector<size_t> batch_dimensions = broadcast_shape(this_batch, other_batch);
 
         size_t A_y = this->shape[this->shape.size() - 2];
         size_t A_x = this->shape[this->shape.size() - 1];
-        size_t B_y = other.shape[other.shape.size() - 2];
-        size_t B_x = other.shape[other.shape.size() - 1];
+        size_t B_y = other->shape[other->shape.size() - 2];
+        size_t B_x = other->shape[other->shape.size() - 1];
 
         if(A_x != B_y) {
             throw std::runtime_error("dimensions incompatible: matmul");
@@ -275,16 +276,16 @@ public:
         batch_dimensions.push_back(A_y);
         batch_dimensions.push_back(B_x);
 
-        Tensor* out = new Tensor(batch_dimensions, {this, &other});
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor> (batch_dimensions, std::vector<std::shared_ptr<Tensor>>{shared_from_this(), other});
         std::vector<size_t> this_ostrides = broadcast_strides(this->shape, this->strides, out->shape);
-        std::vector<size_t> other_ostrides = broadcast_strides(other.shape, other.strides, out->shape);
+        std::vector<size_t> other_ostrides = broadcast_strides(other->shape, other->strides, out->shape);
         
         size_t out_rank = out->shape.size();
         size_t this_rank = this->shape.size();
-        size_t other_rank = other.shape.size();
+        size_t other_rank = other->shape.size();
         size_t batch_total = 1;
 
-        for(int i = 0; i < out_rank - 2; i++) {
+        for(size_t i = 0; i < out_rank - 2; i++) {
             batch_total *= out->shape[i];
         }
 
@@ -304,7 +305,7 @@ public:
             for(size_t i = 0; i < A_y; i++) {
                 for(size_t j = 0; j < B_x; j++) {
                     for(size_t p = 0; p < A_x; p++) {
-                        out->data[out_offset + (i * out->strides[out_rank - 2]) + (j * out->strides[out_rank-1])] += this->data[this_offset + (i * this->strides[this_rank - 2]) + (p * this->strides[this_rank - 1])] * other.data[other_offset + (p * other.strides[other_rank - 2]) + (j *  other.strides[other_rank - 1])];
+                        out->data[out_offset + (i * out->strides[out_rank - 2]) + (j * out->strides[out_rank-1])] += this->data[this_offset + (i * this->strides[this_rank - 2]) + (p * this->strides[this_rank - 1])] * other->data[other_offset + (p * other->strides[other_rank - 2]) + (j *  other->strides[other_rank - 1])];
                     }
                 }
             }
@@ -320,7 +321,7 @@ public:
             }
         }
 
-        out->backward_fn = [this, &other, out, this_ostrides, other_ostrides, batch_total, out_rank, other_rank, this_rank, A_y, A_x, B_y, B_x]() {
+        out->backward_fn = [self = shared_from_this(), other, out_ptr = out.get(), this_ostrides, other_ostrides, batch_total, out_rank, other_rank, this_rank, A_y, A_x, B_y, B_x]() {
             std::vector<size_t> idx(out_rank, 0);
 
             for(size_t a = 0; a < batch_total; a++) {
@@ -331,18 +332,18 @@ public:
                 for(size_t k = 0; k < out_rank - 2; k++) {
                     this_offset += idx[k] * this_ostrides[k];
                     other_offset += idx[k] * other_ostrides[k];
-                    out_offset += idx[k] * out->strides[k];
+                    out_offset += idx[k] * out_ptr->strides[k];
                 }
 
                 for (size_t i = 0; i < A_y; i++) {
                     for (size_t p = 0; p < A_x; p++) {
                         double accumulate = 0.0;
                         for (size_t j = 0; j < B_x; j++) {
-                            double dout_val = out->grad[out_offset + i*out->strides[out_rank-2] + j*out->strides[out_rank-1]];
-                            double B_val = other.data[other_offset + p*other.strides[other_rank-2] + j*other.strides[other_rank-1]];
+                            double dout_val = out_ptr->grad[out_offset + i*out_ptr->strides[out_rank-2] + j*out_ptr->strides[out_rank-1]];
+                            double B_val = other->data[other_offset + p*other->strides[other_rank-2] + j*other->strides[other_rank-1]];
                             accumulate += dout_val * B_val;
                         }
-                        this->grad[this_offset + i*this->strides[this_rank-2] + p*this->strides[this_rank-1]] += accumulate;
+                        self->grad[this_offset + i*self->strides[this_rank-2] + p*self->strides[this_rank-1]] += accumulate;
                     }
                 }
 
@@ -350,16 +351,16 @@ public:
                     for (size_t j = 0; j < B_x; j++) {
                         double accumulate = 0.0;
                         for (size_t i = 0; i < A_y; i++) {
-                            double A_val = this->data[this_offset + i*this->strides[this_rank-2] + p*this->strides[this_rank-1]];
-                            double dout_val = out->grad[out_offset + i*out->strides[out_rank-2] + j*out->strides[out_rank-1]];
+                            double A_val = self->data[this_offset + i*self->strides[this_rank-2] + p*self->strides[this_rank-1]];
+                            double dout_val = out_ptr->grad[out_offset + i*out_ptr->strides[out_rank-2] + j*out_ptr->strides[out_rank-1]];
                             accumulate += A_val * dout_val;
                         }
-                        other.grad[other_offset + p*other.strides[other_rank-2] + j*other.strides[other_rank-1]] += accumulate;
+                        other->grad[other_offset + p*other->strides[other_rank-2] + j*other->strides[other_rank-1]] += accumulate;
                     }
                 }
                 for(int k = (int)out_rank - 3; k >= 0; k--) {
                     idx[k]++;
-                    if (idx[k] >= out->shape[k]){
+                    if (idx[k] >= out_ptr->shape[k]){
                         idx[k] = 0;
                     }
                     else {
@@ -372,8 +373,8 @@ public:
         return out;
     }
 
-    Tensor* sum() {
-    Tensor* out = new Tensor(std::vector<size_t>{1}, {this});
+    std::shared_ptr<Tensor> sum() {
+    std::shared_ptr<Tensor> out = std::make_shared<Tensor>(std::vector<size_t>{1}, std::vector<std::shared_ptr<Tensor>>{shared_from_this()});
     size_t total = this->data.size();
     out->data[0] = 0.0;
 
@@ -381,19 +382,19 @@ public:
         out->data[0] += this->data[i];
     }
 
-    out->backward_fn = [this, out, total]() {
-        for (size_t i = 0; i < total; i++) {
-            this->grad[i] += out->grad[0];
-        }
-    };
+        out->backward_fn = [self = shared_from_this(), out_ptr = out.get(), total]() {
+            for (size_t i = 0; i < total; i++) {
+                self->grad[i] += out_ptr->grad[0];
+            }
+        };
 
     return out;
-}
+    }
 
-    void build_topo(Tensor* v, std::unordered_set<Tensor*>& visited, std::vector<Tensor*>& topo) {
-        if(visited.find(v) == visited.end()) {
-            visited.insert(v);
-            for(Tensor* parent: v->parents) {
+    void build_topo(std::shared_ptr<Tensor> v, std::unordered_set<Tensor*>& visited, std::vector<std::shared_ptr<Tensor>>& topo) {
+        if(visited.find(v.get()) == visited.end()) {
+            visited.insert(v.get());
+            for(std::shared_ptr<Tensor> parent: v->parents) {
                 build_topo(parent, visited, topo);
             }
             topo.push_back(v);
@@ -401,9 +402,9 @@ public:
     }
 
     void backward() {
-        std::vector<Tensor*> topo;
+        std::vector<std::shared_ptr<Tensor>> topo;
         std::unordered_set<Tensor*> visited;
-        build_topo(this, visited, topo);
+        build_topo(shared_from_this(), visited, topo);
         
         grad[0] = 1.0;
 
@@ -413,25 +414,25 @@ public:
     }
 
     void zero_grad() {
-        for(auto &i : grad) {
+        for(auto &i : this->grad) {
             i = 0.0;
         }
     }
 
-    Tensor* conv2d(Tensor& filter) {
+    std::shared_ptr<Tensor> conv2d(std::shared_ptr<Tensor> filter) {
         size_t batch_size = this->shape[0];
         size_t in_channels = this->shape[1];
         size_t in_h = this->shape[2];
         size_t in_w = this->shape[3];
 
-        size_t filter_num = filter.shape[0];
-        size_t filter_h = filter.shape[2];
-        size_t filter_w = filter.shape[3];
+        size_t filter_num = filter->shape[0];
+        size_t filter_h = filter->shape[2];
+        size_t filter_w = filter->shape[3];
 
         size_t out_h = in_h - filter_h + 1;
         size_t out_w = in_w - filter_w + 1;
 
-        Tensor* out = new Tensor(std::vector<size_t>{batch_size, filter_num, out_h, out_w}, std::vector<Tensor*>{this, &filter});
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(std::vector<size_t>{batch_size, filter_num, out_h, out_w}, std::vector<std::shared_ptr<Tensor>>{shared_from_this(), filter});
 
         for (size_t i = 0; i < batch_size; i++) {
             for (size_t f = 0; f < filter_num; f++) {
@@ -446,9 +447,9 @@ public:
                                 for (size_t fc = 0; fc < filter_w; fc++) {
 
                                     size_t this_offset = (i * this->strides[0]) + (c * this->strides[1]) + ((j + fr) * this->strides[2]) + ((p + fc) * this->strides[3]);
-                                    size_t filter_offset = (f * filter.strides[0]) + (c * filter.strides[1]) + (fr * filter.strides[2]) + (fc * filter.strides[3]);
+                                    size_t filter_offset = (f * filter->strides[0]) + (c * filter->strides[1]) + (fr * filter->strides[2]) + (fc * filter->strides[3]);
 
-                                    accumulate += this->data[this_offset] * filter.data[filter_offset];
+                                    accumulate += this->data[this_offset] * filter->data[filter_offset];
                                 }
                             }
                         }
@@ -459,23 +460,23 @@ public:
             }
         }
 
-        out->backward_fn = [this, out, &filter, batch_size, in_channels, in_h, in_w, filter_num, filter_h, filter_w, out_h, out_w]() {
+        out->backward_fn = [self = shared_from_this(), out_ptr = out.get(), filter, batch_size, in_channels, in_h, in_w, filter_num, filter_h, filter_w, out_h, out_w]() {
             for (size_t i = 0; i < batch_size; i++) {
                 for (size_t f = 0; f < filter_num; f++) {
                     for (size_t j = 0; j < out_h; j++) {
                         for (size_t p = 0; p < out_w; p++) {
 
-                            size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
+                            size_t out_offset = (i * out_ptr->strides[0]) + (f * out_ptr->strides[1]) + (j * out_ptr->strides[2]) + (p * out_ptr->strides[3]);
 
                             for (size_t c = 0; c < in_channels; c++) {
                                 for (size_t fr = 0; fr < filter_h; fr++) {
                                     for (size_t fc = 0; fc < filter_w; fc++) {
 
-                                        size_t this_offset = (i * this->strides[0]) + (c * this->strides[1]) + ((j + fr) * this->strides[2]) + ((p + fc) * this->strides[3]);
-                                        size_t filter_offset = (f * filter.strides[0]) + (c * filter.strides[1]) + (fr * filter.strides[2]) + (fc * filter.strides[3]);
+                                        size_t this_offset = (i * self->strides[0]) + (c * self->strides[1]) + ((j + fr) * self->strides[2]) + ((p + fc) * self->strides[3]);
+                                        size_t filter_offset = (f * filter->strides[0]) + (c * filter->strides[1]) + (fr * filter->strides[2]) + (fc * filter->strides[3]);
 
-                                        this->grad[this_offset] += filter.data[filter_offset] * out->grad[out_offset];
-                                        filter.grad[filter_offset] += this->data[this_offset] * out->grad[out_offset];
+                                        self->grad[this_offset] += filter->data[filter_offset] * out_ptr->grad[out_offset];
+                                        filter->grad[filter_offset] += self->data[this_offset] * out_ptr->grad[out_offset];
                                     }
                                 }
                             }
@@ -488,13 +489,13 @@ public:
         return out;
     }
 
-    Tensor *maxpool2d(size_t pool_size) {
+    std::shared_ptr<Tensor> maxpool2d(size_t pool_size) {
         size_t batches = this->shape[0];
         size_t filter_num = this->shape[1];
         size_t out_h = this->shape[2] / pool_size;
         size_t out_w = this->shape[3] / pool_size;
 
-        Tensor* out = new Tensor({batches, filter_num, out_h, out_w}, {this});
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(std::vector<size_t>{batches, filter_num, out_h, out_w}, std::vector<std::shared_ptr<Tensor>>{shared_from_this()});
 
         for(size_t i = 0; i < batches; i++) {
             for(size_t f = 0; f < filter_num; f++) {
@@ -519,42 +520,42 @@ public:
             }
         }
 
-        out->backward_fn = [this, out, pool_size, batches, filter_num, out_h, out_w]() {
+        out->backward_fn = [self = shared_from_this(), out_ptr = out.get(), pool_size, batches, filter_num, out_h, out_w]() {
             for(size_t i = 0; i < batches; i++) {
                 for(size_t f = 0; f < filter_num; f++) {
                     for(size_t j = 0; j < out_h; j++) {
                         for(size_t p = 0; p < out_w; p++) {
 
-                            size_t out_offset = (i * out->strides[0]) + (f * out->strides[1]) + (j * out->strides[2]) + (p * out->strides[3]);
+                            size_t out_offset = (i * out_ptr->strides[0]) + (f * out_ptr->strides[1]) + (j * out_ptr->strides[2]) + (p * out_ptr->strides[3]);
 
                             for(size_t pr = 0; pr < pool_size; pr++) {
                                 for(size_t pc = 0; pc < pool_size; pc++) {
-                                    
-                                    size_t this_offset = (i * this->strides[0]) + (f * this->strides[1]) + ((j * pool_size + pr) * this->strides[2]) + ((p * pool_size + pc) * this->strides[3]);
-                                    
-                                    if(this->data[this_offset] < out->data[out_offset]) {
-                                        this->grad[this_offset] = 0;
+
+                                    size_t this_offset = (i * self->strides[0]) + (f * self->strides[1]) + ((j * pool_size + pr) * self->strides[2]) + ((p * pool_size + pc) * self->strides[3]);
+
+                                    if(self->data[this_offset] < out_ptr->data[out_offset]) {
+                                        self->grad[this_offset] = 0;
                                     }
                                     else {
-                                        this->grad[this_offset] += out->grad[out_offset];
+                                        self->grad[this_offset] += out_ptr->grad[out_offset];
                                     }
                                 }
                             }
                         }
                     }
                 }
-            } 
+            }
         };
 
         return out;
     }
 
-    Tensor* reshape(std::vector<size_t> new_shape) {
-        Tensor* out = new Tensor(new_shape, std::vector<Tensor*>{this});
+    std::shared_ptr<Tensor> reshape(std::vector<size_t> new_shape) {
+        std::shared_ptr<Tensor> out = std::make_shared<Tensor>(new_shape, std::vector<std::shared_ptr<Tensor>>{shared_from_this()});
         out->data = this->data;
 
-        out->backward_fn = [this, out] {
-            this->grad = out->grad;
+        out->backward_fn = [self = shared_from_this(), out_ptr = out.get()] {
+            self->grad = out_ptr->grad;
         };
 
         return out;
