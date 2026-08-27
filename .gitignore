@@ -1,0 +1,15 @@
+# Compiled binaries
+*.exe
+*.o
+*.obj
+*.out
+
+# Editor / IDE settings
+.vscode/
+
+# Large data files (link to Kaggle source in README instead)
+mnist_train.csv
+mnist_val.csv
+train.csv
+test.csv
+*.csv
